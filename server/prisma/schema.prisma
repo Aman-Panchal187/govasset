@@ -1,0 +1,295 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SYSTEM_ADMIN
+  ASSET_OFFICER
+  FIELD_VERIFIER
+  VIEWER
+}
+
+enum AssetCategory {
+  EQUIPMENT
+  VEHICLE
+  BUILDING
+}
+
+enum AcquisitionSource {
+  NEW_RECEIPT
+  EXISTING_REGISTER
+}
+
+enum AssetCondition {
+  GOOD
+  FAIR
+  DAMAGED
+  UNSERVICEABLE
+  UNKNOWN
+}
+
+enum LifecycleStatus {
+  PENDING_ACCEPTANCE
+  ACTIVE
+  UNDER_MAINTENANCE
+  MISSING
+  DISPOSAL_PENDING
+  DISPOSAL_APPROVED
+  DISPOSED
+  REJECTED
+}
+
+enum VerificationResult {
+  FOUND
+  MISSING
+}
+
+enum MaintenanceStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum DisposalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  COMPLETED
+}
+
+enum DisposalMethod {
+  AUCTION
+  SCRAP
+  DONATION
+  OTHER
+}
+
+enum AttachmentKind {
+  ASSET_PHOTO
+  DOCUMENT
+  VERIFICATION_PHOTO
+}
+
+model Department {
+  id            String     @id @default(cuid())
+  name          String     @unique
+  code          String     @unique
+  users         User[]
+  locations     Location[]
+  assets        Asset[]
+  transfersFrom Transfer[] @relation("FromDepartment")
+  transfersTo   Transfer[] @relation("ToDepartment")
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+}
+
+model Location {
+  id            String         @id @default(cuid())
+  name          String
+  departmentId  String
+  department    Department     @relation(fields: [departmentId], references: [id])
+  assets        Asset[]
+  transfersFrom Transfer[]     @relation("FromLocation")
+  transfersTo   Transfer[]     @relation("ToLocation")
+  verifications Verification[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@unique([departmentId, name])
+  @@index([departmentId])
+}
+
+model User {
+  id                 String         @id @default(cuid())
+  name               String
+  email              String         @unique
+  passwordHash       String
+  role               Role
+  departmentId       String?
+  department         Department?    @relation(fields: [departmentId], references: [id])
+  active             Boolean        @default(true)
+  assignedAssets     Asset[]        @relation("AssignedOfficer")
+  verified           Verification[]
+  maintenanceCreated Maintenance[]  @relation("MaintenanceCreator")
+  transfers          Transfer[]
+  disposalRequested  Disposal[]     @relation("DisposalRequester")
+  disposalDecided    Disposal[]     @relation("DisposalDecider")
+  disposalCompleted  Disposal[]     @relation("DisposalCompleter")
+  activities         Activity[]
+  attachments        Attachment[]
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@index([departmentId, role])
+}
+
+model Counter {
+  key   String @id
+  value Int    @default(0)
+}
+
+model Asset {
+  id                  String            @id @default(cuid())
+  code                String            @unique
+  name                String
+  category            AssetCategory
+  description         String?
+  serialNumber        String?
+  departmentReference String?
+  departmentId        String
+  department          Department        @relation(fields: [departmentId], references: [id])
+  assignedOfficerId   String?
+  assignedOfficer     User?             @relation("AssignedOfficer", fields: [assignedOfficerId], references: [id])
+  locationId          String
+  location            Location          @relation(fields: [locationId], references: [id])
+  custodianName       String
+  acquisitionSource   AcquisitionSource
+  acquisitionDate     DateTime
+  purchaseCost        Decimal?          @db.Decimal(14, 2)
+  purchaseReference   String?
+  condition           AssetCondition    @default(UNKNOWN)
+  status              LifecycleStatus   @default(PENDING_ACCEPTANCE)
+  acceptedById        String?
+  acceptedAt          DateTime?
+  rejectionReason     String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  verifications       Verification[]
+  maintenance         Maintenance[]
+  transfers           Transfer[]
+  disposals           Disposal[]
+  attachments         Attachment[]
+  activities          Activity[]
+
+  @@unique([category, serialNumber])
+  @@index([departmentId])
+  @@index([status])
+  @@index([locationId])
+  @@index([assignedOfficerId])
+  @@index([serialNumber])
+}
+
+model Verification {
+  id               String             @id @default(cuid())
+  assetId          String
+  asset            Asset              @relation(fields: [assetId], references: [id])
+  verifierId       String
+  verifier         User               @relation(fields: [verifierId], references: [id])
+  result           VerificationResult
+  condition        AssetCondition?
+  actualLocationId String
+  actualLocation   Location           @relation(fields: [actualLocationId], references: [id])
+  remarks          String?
+  resolutionNote   String?
+  createdAt        DateTime           @default(now())
+  attachments      Attachment[]
+
+  @@index([assetId, createdAt])
+}
+
+model Maintenance {
+  id              String            @id @default(cuid())
+  assetId         String
+  asset           Asset             @relation(fields: [assetId], references: [id])
+  issue           String
+  priority        Priority
+  notes           String?
+  status          MaintenanceStatus @default(OPEN)
+  createdById     String
+  createdBy       User              @relation("MaintenanceCreator", fields: [createdById], references: [id])
+  completionNotes String?
+  repairCost      Decimal?          @db.Decimal(14, 2)
+  completedAt     DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([assetId, status])
+}
+
+model Transfer {
+  id               String     @id @default(cuid())
+  assetId          String
+  asset            Asset      @relation(fields: [assetId], references: [id])
+  fromDepartmentId String
+  fromDepartment   Department @relation("FromDepartment", fields: [fromDepartmentId], references: [id])
+  toDepartmentId   String
+  toDepartment     Department @relation("ToDepartment", fields: [toDepartmentId], references: [id])
+  fromLocationId   String
+  fromLocation     Location   @relation("FromLocation", fields: [fromLocationId], references: [id])
+  toLocationId     String
+  toLocation       Location   @relation("ToLocation", fields: [toLocationId], references: [id])
+  fromCustodian    String
+  toCustodian      String
+  reason           String
+  transferDate     DateTime
+  actorId          String
+  actor            User       @relation(fields: [actorId], references: [id])
+  createdAt        DateTime   @default(now())
+
+  @@index([assetId, createdAt])
+}
+
+model Disposal {
+  id              String          @id @default(cuid())
+  assetId         String
+  asset           Asset           @relation(fields: [assetId], references: [id])
+  reason          String
+  status          DisposalStatus  @default(PENDING)
+  previousStatus  LifecycleStatus
+  requestedById   String
+  requestedBy     User            @relation("DisposalRequester", fields: [requestedById], references: [id])
+  decisionById    String?
+  decisionBy      User?           @relation("DisposalDecider", fields: [decisionById], references: [id])
+  decisionNote    String?
+  decidedAt       DateTime?
+  method          DisposalMethod?
+  completionDate  DateTime?
+  referenceNumber String?
+  completionNotes String?
+  completedById   String?
+  completedBy     User?           @relation("DisposalCompleter", fields: [completedById], references: [id])
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([assetId, status])
+}
+
+model Attachment {
+  id             String         @id @default(cuid())
+  assetId        String?
+  asset          Asset?         @relation(fields: [assetId], references: [id])
+  verificationId String?
+  verification   Verification?  @relation(fields: [verificationId], references: [id])
+  kind           AttachmentKind
+  originalName   String
+  storedName     String
+  mimeType       String
+  size           Int
+  uploadedById   String
+  uploadedBy     User           @relation(fields: [uploadedById], references: [id])
+  createdAt      DateTime       @default(now())
+}
+
+model Activity {
+  id        String   @id @default(cuid())
+  assetId   String
+  asset     Asset    @relation(fields: [assetId], references: [id])
+  actorId   String
+  actor     User     @relation(fields: [actorId], references: [id])
+  action    String
+  details   Json
+  createdAt DateTime @default(now())
+
+  @@index([assetId, createdAt])
+}
