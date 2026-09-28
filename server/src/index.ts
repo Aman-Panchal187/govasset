@@ -14,7 +14,10 @@ const prisma = new PrismaClient();
 const app = express();
 const port = Number(process.env.PORT || 4000);
 const secret = process.env.JWT_SECRET || 'dev-only-change-me';
-app.use(cors({origin:process.env.CLIENT_URL || 'http://localhost:5173'}));
+app.use(cors({
+  origin: true,
+  credentials: true
+}));
 app.use(express.json({limit:'1mb'}));
 const uploadDir=path.resolve('uploads'); fs.mkdirSync(uploadDir,{recursive:true});
 app.use('/uploads',express.static(uploadDir));
